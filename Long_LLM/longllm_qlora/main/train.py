@@ -1,7 +1,8 @@
 import torch
 import logging
-from transformers import HfArgumentParser
+from transformers import HfArgumentParser, AutoModelForCausalLM
 from transformers.integrations import is_deepspeed_zero3_enabled
+from peft import get_peft_model, LoraConfig
 from src import ( 
     Data,
     DefaultDataCollator,
@@ -30,33 +31,54 @@ def main():
         device_map = None
     else:
         device_map = {"": "cuda"}
-    
-    model, _ = FastLanguageModel.from_pretrained(
-        model_name = model_args.model_name_or_path,
-        max_seq_length = model_args.max_length,
-        dtype = torch.bfloat16,
-        device_map=device_map,
-        load_in_4bit = model_args.load_in_4_bit,
-        # token = "hf_...", # use one if using gated models like meta-llama/Llama-2-7b-hf
-        token=model_args.access_token,
-        cache_dir=model_args.model_cache_dir,
 
-        rope_theta=model_args.rope_theta,
-    )
+    if 'granite' in model_args.model_name_or_path:
+        model = AutoModelForCausalLM.from_pretrained(
+            pretrained_model_name_or_path = model_args.model_name_or_path,
+            torch_dtype=torch.bfloat16,
+            device_map=device_map,
+            load_in_4bit = model_args.load_in_4_bit,
+            token=model_args.access_token,
+            cache_dir=model_args.model_cache_dir,
+            rope_theta=model_args.rope_theta,
+        )
 
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r = training_args.lora_rank, # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
-        target_modules = training_args.lora_targets,
-        modules_to_save=training_args.lora_extra_params,
-        lora_dropout = 0, # Supports any, but = 0 is optimized
-        bias = "none",    # Supports any, but = "none" is optimized
-        # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
-        use_gradient_checkpointing = "unsloth", # True or "unsloth" for very long context
-        random_state = 3407,
-        use_rslora = False,  # We support rank stabilized LoRA
-        loftq_config = None, # And LoftQ
-    )
+        model = get_peft_model(
+            model, 
+            LoraConfig(
+                r = training_args.lora_rank,
+                target_modules = training_args.lora_targets,
+                modules_to_save=training_args.lora_extra_params,
+                lora_dropout = 0,
+                bias = "none"
+            )
+        )
+    else:
+        model, _ = FastLanguageModel.from_pretrained(
+            model_name = model_args.model_name_or_path,
+            max_seq_length = model_args.max_length,
+            dtype = torch.bfloat16,
+            device_map=device_map,
+            load_in_4bit = model_args.load_in_4_bit,
+            # token = "hf_...", # use one if using gated models like meta-llama/Llama-2-7b-hf
+            token=model_args.access_token,
+            cache_dir=model_args.model_cache_dir,
+            rope_theta=model_args.rope_theta,
+        )
+
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r = training_args.lora_rank, # Choose any number > 0 ! Suggested 8, 16, 32, 64, 128
+            target_modules = training_args.lora_targets,
+            modules_to_save=training_args.lora_extra_params,
+            lora_dropout = 0, # Supports any, but = 0 is optimized
+            bias = "none",    # Supports any, but = "none" is optimized
+            # [NEW] "unsloth" uses 30% less VRAM, fits 2x larger batch sizes!
+            use_gradient_checkpointing = "unsloth", # True or "unsloth" for very long context
+            random_state = 3407,
+            use_rslora = False,  # We support rank stabilized LoRA
+            loftq_config = None, # And LoftQ
+        )
 
     print(model.config)
 

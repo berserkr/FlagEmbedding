@@ -102,6 +102,12 @@ def apply_chat_template(template, messages, system_message=None, tokenizer:PreTr
             "begin_of_text_len": 1,
             "role_sep_left_offset": -4,
         },
+        'granite': {
+            "turn_sep": "<end_of_turn>\n",
+            "role_sep": "<end_of_role>\n",
+            "begin_of_text_len": 0,
+            "role_sep_left_offset": -1,
+        },
     }[template]
 
     role_map = {
@@ -198,6 +204,7 @@ class SeparatorStyle(IntEnum):
     ADD_NEW_LINE_SINGLE = auto()
     LLAMA2 = auto()
     LLAMA3 = auto()
+    GRANITE = auto()
     CHATGLM = auto()
     CHATML = auto()
     CHATINTERN = auto()
@@ -275,6 +282,14 @@ class Conversation:
                 else:
                     ret += role + ": "  # must be end with a space
             return ret
+        elif self.sep_style == SeparatorStyle.GRANITE:
+            ret = ""
+            for role, message in self.messages:
+                if message:
+                    ret += role + "\n" + message + self.sep
+                else:
+                    ret += role + "\n"
+                return ret
         elif self.sep_style == SeparatorStyle.ADD_NEW_LINE_SINGLE:
             ret = "" if system_prompt == "" else system_prompt + self.sep
             for role, message in self.messages:
@@ -1654,6 +1669,19 @@ register_conv_template(
     )
 )
 
+# Dolomite...
+register_conv_template(
+    Conversation(
+        name="granite",
+        system_template="<start_of_turn>system<end_of_role>{system_message}",
+        roles=("<start_of_turn>user<end_of_role>",  "<start_of_turn>assistant<end_of_role>"),
+        sep="<end_of_turn>\n",
+        sep_style=SeparatorStyle.GRANITE,
+        stop_token_ids=[49152, 46, 0],
+    )
+)
+
+
 # AquilaChat2-7B default template
 # source: https://huggingface.co/BAAI/AquilaChat2-34B/blob/4608b75855334b93329a771aee03869dbf7d88cc/predict.py#L242
 register_conv_template(
@@ -2019,3 +2047,14 @@ if __name__ == "__main__":
     conv.append_message(conv.roles[0], "How are you?")
     conv.append_message(conv.roles[1], None)
     print(conv.get_prompt())
+
+    print("-- Granite template --")
+    conv = get_conv_template("granite")
+    conv.set_system_message("You are a helpful, respectful and honest assistant.")
+    conv.append_message(conv.roles[0], "Hello!")
+    conv.append_message(conv.roles[1], "Hi!")
+    conv.append_message(conv.roles[0], "How are you?")
+    conv.append_message(conv.roles[1], None)
+    print(conv.get_prompt())
+
+    print("\n")
