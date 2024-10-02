@@ -103,10 +103,10 @@ def apply_chat_template(template, messages, system_message=None, tokenizer:PreTr
             "role_sep_left_offset": -4,
         },
         'granite': {
-            "turn_sep": "<end_of_turn>\n",
-            "role_sep": "<end_of_role>\n",
+            "turn_sep": "<|end_of_text|>\n", #"<|start_of_role|>user<|end_of_role|>",
+            "role_sep": "<|end_of_role|>",
             "begin_of_text_len": 0,
-            "role_sep_left_offset": -1,
+            "role_sep_left_offset": -2,
         },
     }[template]
 
@@ -129,6 +129,7 @@ def apply_chat_template(template, messages, system_message=None, tokenizer:PreTr
         conversation_template.append_message(role_map['assistant'], None)
 
     conversation = conversation_template.get_prompt()
+    #print(f"C>>> {conversation}")
 
     if tokenizer is not None:
         encoded = tokenizer(conversation, **tokenization_kwargs)
@@ -141,7 +142,9 @@ def apply_chat_template(template, messages, system_message=None, tokenizer:PreTr
             begin_of_text_len = config["begin_of_text_len"]
             role_sep_left_offset = config["role_sep_left_offset"]
             turn_sep_len = len(tokenizer.encode(turn_sep, add_special_tokens=False))
-
+            role_sep_len = len(tokenizer.encode(role_sep, add_special_tokens=False))
+            #print(f'XXX - turn sep len: {turn_sep_len}, role sep: {role_sep_len}')
+            
             # transform to array for fast value assignment
             labels = deepcopy(encoded['input_ids'])
             labels = np.array(labels)
@@ -149,38 +152,67 @@ def apply_chat_template(template, messages, system_message=None, tokenizer:PreTr
 
             turns = conversation.split(turn_sep)
 
+            #print(f"t>>> {turns}")
+
             cur_len = 0
             for i, turn in enumerate(turns):
                 if turn == "":
                     break
-                
+                # if user turn, mask everything
                 turn_len = len(tokenizer(turn, add_special_tokens=False).input_ids)
 
-                parts = turn.split(role_sep)
+                if i % 2 == 0:
+                    labels[cur_len: cur_len + turn_len] = -100
 
-                if len(parts) != 2:
-                    break
+                else:
+                    # assume assistant...
+                    parts = turn.split(role_sep)
 
-                user_message, assistant_message = parts
+                    if len(parts) != 2:
+                        print(f'XXX - parts != 2 - {parts}')
+                        labels[cur_len: cur_len + turn_len] = -100
+                        continue # skip it ...
 
-                user_message += role_sep
-                instruction_len = len(tokenizer(user_message, add_special_tokens=False).input_ids)
+                    #print(f'{i} - Masking Parts: {parts}')
 
-                # for bos tokens
-                if i == 0:
-                    turn_len += begin_of_text_len
-                    instruction_len += begin_of_text_len
+                    ass, mess = parts
+                    ass_len = len(tokenizer(ass, add_special_tokens=False).input_ids)
+                    mess_len = len(tokenizer(mess, add_special_tokens=False).input_ids)
 
-                # Ignore the user instructions
-                labels[max(cur_len + role_sep_left_offset, 0): cur_len + instruction_len] = -100
+                    labels[cur_len - 5: cur_len + ass_len + role_sep_len] = -100
 
-                cur_len = cur_len + turn_len + turn_sep_len
+                cur_len += turn_len + turn_sep_len
 
                 if cur_len > total_len:
+                    print(f"XXX - Reached somethign bad: {cur_len} >  {total_len:}")
                     break
 
-            labels[max(cur_len + role_sep_left_offset, 0):] = -100
+            # print masked data
+            """
+            jj = 0
+            subset = []
+            while True:
 
+                if jj >= total_len:
+                    break
+
+                if labels[jj]==-100 and len(subset) > 0:
+                    print(f"Subset({jj}) => {tokenizer.decode(subset)}")
+                    subset=[]
+                    
+                elif labels[jj]==-100:
+                    pass
+
+                else:
+                    subset.append(labels[jj])
+
+                jj+=1
+
+            if len(subset) >0:
+                print(f"Subset({jj}) => {tokenizer.decode(subset)}")
+            """
+
+            labels[min(cur_len, total_len-1):] = -100
             encoded['labels'] = labels.tolist()
 
             # sanity check
@@ -284,12 +316,19 @@ class Conversation:
             return ret
         elif self.sep_style == SeparatorStyle.GRANITE:
             ret = ""
-            for role, message in self.messages:
+
+            for i, (role, message) in enumerate(self.messages):
                 if message:
-                    ret += role + "\n" + message + self.sep
+                    ret += "<|start_of_role|>" + role + "<|end_of_role|>" + message + self.sep
                 else:
-                    ret += role + "\n"
-                return ret
+                    ret += "<|start_of_role|>" + role + "<|end_of_role|>"
+
+                """
+                if i == len(self.messages)-1:
+                    ret += "\n" # end of messages has sep + \n
+                """
+
+            return ret
         elif self.sep_style == SeparatorStyle.ADD_NEW_LINE_SINGLE:
             ret = "" if system_prompt == "" else system_prompt + self.sep
             for role, message in self.messages:
@@ -1673,11 +1712,11 @@ register_conv_template(
 register_conv_template(
     Conversation(
         name="granite",
-        system_template="<start_of_turn>system<end_of_role>{system_message}",
-        roles=("<start_of_turn>user<end_of_role>",  "<start_of_turn>assistant<end_of_role>"),
-        sep="<end_of_turn>\n",
+        system_template="<|start_of_role|>system<|end_of_role|>{system_message}",
+        roles=("user",  "assistant"),
+        sep="<|end_of_text|>\n",
         sep_style=SeparatorStyle.GRANITE,
-        stop_token_ids=[49152, 46, 0],
+        stop_str=["<|end_of_text|>"]
     )
 )
 
