@@ -16,7 +16,7 @@ conda activate /proj/checkpoints/bathen/envs/conda/longrope
 GPUS_PER_NODE=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -w)
 
 CHECKPOINT=/proj/checkpoints/stallone/models/preview/granite-3b-instruct-preview-4k-r240917a
-OUTPUT=granite-3b-instruct-preview-32k
+OUTPUT=granite-3b-instruct-preview-32k-500krt
 DATA_ROOT=/proj/checkpoints/bathen/data/pile/long-llm
 
 mkdir -p data/outputs/
@@ -27,7 +27,7 @@ torchrun --nproc_per_node 8 -m main.train \
     --train_data long-llm:gpt/one_detail_book.train.64K.json long-llm:gpt/one_detail_paper.train.64K.json long-llm:gpt/multi_detail_book.train.json long-llm:gpt/multi_detail_paper_short.train.json long-llm:gpt/multi_detail_paper_long.train.json long-llm:gpt/bio_book.train.json long-llm:longalpaca/train.json long-llm:redpajama/train.json[5000] \
     --max_length 32768 \
     --group_by_length \
-    --rope_theta 200e3 \
+    --rope_theta 500000 \
     --attn_impl flash_attention_2 \
     --gradient_checkpointing \
     --use_reentrant True \

@@ -1,12 +1,15 @@
 #!/bin/bash
 
 
-CHECKPOINT=/proj/checkpoints/bathen/developer/FlagEmbedding/Long_LLM/longllm_qlora/data/outputs/granite-3b-instruct-preview-16k/merged
+CHECKPOINT=/proj/checkpoints/bathen/developer/FlagEmbedding/Long_LLM/longllm_qlora/data/outputs/granite-3b-instruct-preview-32k-500krt/merged/
+#CHECKPOINT=/proj/checkpoints/stallone/models/preview/granite-3b-instruct-preview-4k-r240917a
 #31500 for 32K+
-MAX_LEN=16150
+MAX_LEN=31500
+#MAX_LEN=4096
 
 #200e3 for 32, 200e6 for 80k
-RT=200e3
+#RT=100e3
+RT=500000
 
 torchrun --nproc_per_node 8 -m main.eval_longbench --max_length $MAX_LEN --model_name_or_path $CHECKPOINT --rope_theta $RT --attn_impl flash_attention_2 --chat_template granite --data_root /proj/checkpoints/bathen/data/pile/long-llm
 torchrun --nproc_per_node 8 -m main.eval_topic --model_name_or_path $CHECKPOINT --rope_theta $RT --attn_impl flash_attention_2 --chat_template granite --data_root /proj/checkpoints/bathen/data/pile/long-llm 
